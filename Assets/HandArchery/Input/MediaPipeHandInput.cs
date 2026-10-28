@@ -37,6 +37,14 @@ namespace HandArchery.Input
         public double MaximumInferenceSeconds { get; private set; }
         public double LatestFrameAge => cache.TryGetLatest(out var frame) ? Time.realtimeSinceStartupAsDouble-frame.TimestampSeconds : double.PositiveInfinity;
         public bool CameraStreaming { get; private set; }
+        // Borrowed for the local HUD only. This provider alone owns camera lifetime.
+        public WebCamTexture PreviewTexture => cameraTexture;
+        public bool CameraStarting => waitingForCamera;
+        public bool PreviewReady => CameraStreaming && cameraTexture != null && cameraTexture.isPlaying &&
+            cameraTexture.width > 16 && cameraTexture.height > 16 &&
+            Time.realtimeSinceStartupAsDouble - lastCaptureAt <= .5;
+        public string PreviewStatus => PreviewReady ? "실시간 카메라" : waitingForCamera ? "카메라 준비 중" :
+            NativeReady && DeviceCount == 0 ? "카메라 없음 · 연결 후 입력 재시작" : "카메라 중단 · 입력 재시작";
         public bool NativeReady => task != null;
         public bool MirrorViewport { get => mirrorViewport; set => mirrorViewport = value; }
         public bool SwapHandedness { get => swapHandedness; set => swapHandedness = value; }

@@ -16,6 +16,8 @@ namespace HandArchery.Presentation
         ArcherySmokeRunner smoke;
         ArcheryHud hud;
         Camera view;
+        const float RestFieldOfView = 49f;
+        float zoomVelocity;
         HandInputFrame latest;
         bool hasFrame;
         bool applicationFocused = true, applicationPaused;
@@ -23,6 +25,7 @@ namespace HandArchery.Presentation
         public ArcheryTarget Target { get; private set; }
         public Camera View => view;
         public bool IsSynthetic => smoke != null;
+        public CameraInput CameraPreviewSource => cameraInput;
         public bool Mirror => cameraInput != null && cameraInput.MirrorViewport;
         public bool SwapHands => cameraInput != null && cameraInput.SwapHandedness;
         public string InputStatus { get; private set; } = "입력을 준비하고 있습니다.";
@@ -45,7 +48,7 @@ namespace HandArchery.Presentation
             view = cameraObject.AddComponent<Camera>(); cameraObject.AddComponent<AudioListener>();
             view.transform.position = new Vector3(0, 2.1f, 0);
             view.transform.LookAt(Target.Center);
-            view.fieldOfView = 49; view.nearClipPlane = .08f; view.farClipPlane = 120;
+            view.fieldOfView = RestFieldOfView; view.nearClipPlane = .08f; view.farClipPlane = 120;
             view.clearFlags = CameraClearFlags.SolidColor; view.backgroundColor = new Color(.63f,.76f,.78f);
             var sun = new GameObject("Afternoon sun").AddComponent<Light>(); sun.transform.SetParent(transform);
             sun.type = LightType.Directional; sun.intensity = 2.2f; sun.color = new Color(1,.94f,.82f);
@@ -53,7 +56,9 @@ namespace HandArchery.Presentation
             RenderSettings.ambientMode = AmbientMode.Flat; RenderSettings.ambientLight = new Color(.5f,.58f,.59f);
             RenderSettings.fog = true; RenderSettings.fogColor = view.backgroundColor; RenderSettings.fogMode = FogMode.Linear;
             RenderSettings.fogStartDistance = 35; RenderSettings.fogEndDistance = 95;
-            Session = gameObject.AddComponent<ArcherySession>(); Session.Initialize(Target, new Vector3(-.48f,1.7f,1.1f));
+            Session = gameObject.AddComponent<ArcherySession>();
+            Session.Settings.BowIsLeft = true; // Initial physical hand assignment; label correction/mirror are separate options.
+            Session.Initialize(Target, new Vector3(-.48f,1.7f,1.1f));
             var bow = new GameObject("Practice bow").AddComponent<BowView>(); bow.transform.SetParent(transform); bow.Initialize(Session);
             bool synthetic = Array.IndexOf(Environment.GetCommandLineArgs(), "--handarchery-smoke") >= 0;
             if (synthetic)
@@ -78,9 +83,27 @@ namespace HandArchery.Presentation
             bool fresh = hasFrame && age >= 0 && age <= Session.Settings.MaximumFrameAgeSeconds && !double.IsNaN(age);
             InputStatus = !Session.HasFocus ? "포커스 없음 · 양손 준비가 다시 필요합니다" :
                 cameraInput != null && cameraInput.NativeReady && cameraInput.DeviceCount == 0 ? "카메라가 없습니다. 연결한 뒤\n입력 재시작을 눌러 주세요." :
+                cameraInput != null && cameraInput.CameraStarting ? "카메라 준비 중 · 양손을 화면 안에 보여 주세요" :
+                cameraInput != null && !cameraInput.PreviewReady ? "카메라 입력 중단 · 연결을 확인하고\n입력 재시작을 눌러 주세요." :
                 !hasFrame ? "카메라 입력 대기 · 입력 재시작을 사용할 수 있습니다" :
-                !fresh ? "입력이 오래되어 당김을 취소했습니다.\n계속되면 입력 재시작을 눌러 주세요." :
-                latest.Left.Tracked && latest.Right.Tracked ? "양손 인식 중 · 조준할 수 있습니다" : "양손을 카메라 안에 보여 주세요 · 손 소실 시 발사 취소";
+                !fresh ? "카메라 입력이 멈춰 당김 취소\n계속 멈춰 있으면 입력 재시작을 눌러 주세요." :
+                latest.Left.Tracked && latest.Right.Tracked ?
+                    Session.Gesture.State == GesturePhase.WaitingForHands ? "양손 인식 · 손을 펴고 잠깐 기다리면 자동 준비" : "양손 인식 중 · 조준할 수 있습니다" :
+                    "손을 다시 보이고 펴면 자동 준비\n손 소실 시 당김만 취소 · 점수와 남은 화살 유지";
+            bool drawing = Session.HasStarted && Session.HasFocus && !Session.Round.IsFinished &&
+                Session.Round.RemainingShots > 0 && fresh && latest.Left.Tracked && latest.Right.Tracked &&
+                Session.Gesture.State == GesturePhase.Drawing;
+            float desiredFieldOfView = DrawFieldOfView(Session.Gesture.DrawPower, drawing);
+            // Presentation only: aim world coordinates and projectile trajectories remain unchanged.
+            // Update precedes the HUD LateUpdate projection, so the reticle follows this camera FOV.
+            view.fieldOfView = Mathf.Clamp(Mathf.SmoothDamp(view.fieldOfView, desiredFieldOfView, ref zoomVelocity,
+                .16f, Mathf.Infinity, Time.unscaledDeltaTime), 46f, RestFieldOfView);
+        }
+        public static float DrawFieldOfView(float drawPower, bool active)
+        {
+            if (!active || float.IsNaN(drawPower) || float.IsInfinity(drawPower)) return RestFieldOfView;
+            float power = Math.Max(0f, Math.Min(1f, drawPower));
+            return RestFieldOfView - 3f * power;
         }
         public void StartRound() { Session.StartRound(); }
         public void RestartInput()

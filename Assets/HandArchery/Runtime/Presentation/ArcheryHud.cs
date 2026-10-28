@@ -12,11 +12,13 @@ namespace HandArchery.Presentation
         static readonly Color Muted = new Color(.68f,.76f,.72f);
         static readonly Color Gold = new Color(.94f,.76f,.34f);
         static readonly Color Panel = new Color(.055f,.105f,.09f,.94f);
+        static readonly Color AimCyan = new Color(.12f,.94f,1f);
         ArcheryExperience experience;
         Font font;
         RectTransform canvasRect, reticle;
         GameObject intro, result, diagnostics;
-        Text state, recognition, provider, score, remaining, power, feedback, resultScore, badge, mirror, swap, bow, instructions, diagnosticsButtonText;
+        Text state, recognition, provider, score, remaining, power, resultScore, badge, mirror, swap, bow, previewStatus, diagnosticsButtonText;
+        CameraPreviewView cameraPreview;
         Image powerFill;
         Button restartInput, mirrorButton, swapButton, bowButton;
         public void Build(ArcheryExperience owner)
@@ -46,9 +48,13 @@ namespace HandArchery.Presentation
             score = Label(scores,"0 / 50",new Vector2(20,-48),new Vector2(230,67),43,Gold);
             remaining = Label(scores,"남은 화살 5발",new Vector2(20,-129),new Vector2(230,55),18,Ink);
 
-            var guide = Box(canvasRect,"Three-step guide",new Vector2(26,24),new Vector2(740,148),new Vector2(0,0));
-            instructions = Label(guide,"",new Vector2(20,-12),new Vector2(700,62),19,Ink);
-            feedback = Label(guide,"",new Vector2(20,-84),new Vector2(700,56),18,Gold);
+            var preview = Box(canvasRect,"Local camera preview",new Vector2(26,24),new Vector2(424,330),new Vector2(0,0));
+            var previewFrame = Rect(preview,"Camera letterbox",new Vector2(12,-8),new Vector2(400,300),new Vector2(0,1));
+            var backing = previewFrame.gameObject.AddComponent<Image>(); backing.color = Color.black; backing.raycastTarget = false;
+            var previewImage = Rect(previewFrame,"Live camera image",Vector2.zero,new Vector2(400,300),new Vector2(.5f,.5f));
+            cameraPreview = previewImage.gameObject.AddComponent<CameraPreviewView>(); cameraPreview.raycastTarget = false;
+            cameraPreview.enabled = false;
+            previewStatus = Label(preview,"카메라 준비 중",new Vector2(12,-309),new Vector2(400,20),16,Muted);
 
             var controls = Box(canvasRect,"Input controls",new Vector2(-26,24),new Vector2(350,300),new Vector2(1,0));
             power = Label(controls,"당김 힘 0%",new Vector2(18,-10),new Vector2(315,30),20,Ink);
@@ -77,7 +83,7 @@ namespace HandArchery.Presentation
 
             intro = Overlay("시작 안내", "천천히, 다섯 발의 양궁", out var introPanel);
             Label(introPanel,"양손을 펼쳐 준비합니다.\n왼손으로 조준하고 오른 엄지·검지를 붙입니다.\n두 손 사이를 옆으로 벌려 시위를 당깁니다.\n오른 엄지·검지를 벌리면 한 발이 발사됩니다.",new Vector2(35,-102),new Vector2(580,130),22,Ink);
-            Label(introPanel,"손이 가려지면 당김은 취소됩니다. 영상을 표시하거나 저장하지 않습니다.",new Vector2(35,-244),new Vector2(580,62),18,Muted);
+            Label(introPanel,"손이 가려지면 당김은 취소됩니다. 왼쪽 아래에서 내 모습을 확인하세요. 영상은 미리보기만 하며 저장·전송하지 않습니다.",new Vector2(35,-244),new Vector2(580,62),18,Muted);
             Action(introPanel,"체험 시작",new Vector2(35,-328),new Vector2(580,62),owner.StartRound,out _);
             result = Overlay("라운드 결과", "다섯 발, 수고하셨습니다", out var resultPanel);
             resultScore = Label(resultPanel,"0 / 50점",new Vector2(35,-105),new Vector2(580,85),52,Gold);
@@ -101,16 +107,18 @@ namespace HandArchery.Presentation
             float value = session.Gesture.DrawPower;
             power.text = "당김 힘 " + Mathf.RoundToInt(value * 100) + "%";
             powerFill.rectTransform.sizeDelta = new Vector2(314 * Mathf.Clamp01(value),10);
-            feedback.text = session.Feedback;
             string bowHand = session.Settings.BowIsLeft ? "왼손" : "오른손";
-            string drawHand = session.Settings.BowIsLeft ? "오른손" : "왼손";
-            instructions.text = "① 양손 펼쳐 준비   ② " + bowHand + " 조준 + " + drawHand + " 핀치\n③ " + drawHand + "을 바깥으로 당긴 뒤 엄지·검지를 벌려 발사";
+            bool previewLive = cameraPreview.Show(experience.CameraPreviewSource);
+            previewStatus.text = experience.IsSynthetic ? "합성 검사 모드 · 카메라 미리보기 없음" :
+                previewLive ? "실시간 카메라 · 거울 " + (experience.Mirror ? "켜짐" : "꺼짐") :
+                experience.CameraPreviewSource == null ? "카메라 준비 중" :
+                experience.CameraPreviewSource.PreviewReady ? "카메라 방향 확인 필요 · 입력 재시작" : experience.CameraPreviewSource.PreviewStatus;
             mirror.text = "거울 " + (experience.Mirror ? "켜짐" : "꺼짐");
             swap.text = "좌우손 " + (experience.SwapHands ? "교환" : "기본");
-            bow.text = "활을 잡는 손: " + bowHand;
+            bow.text = "활손: " + bowHand + " → " + (session.Settings.BowIsLeft ? "오른손" : "왼손") + " 전환";
             bool real = !experience.IsSynthetic;
             restartInput.interactable = real; mirrorButton.interactable = real; swapButton.interactable = real; bowButton.interactable = real;
-            badge.text = experience.IsSynthetic ? "개발용 합성 입력  ·  실제 손 검증 아님\n" + experience.SmokeResult : "실제 카메라 모드  ·  영상 저장 없음";
+            badge.text = experience.IsSynthetic ? "개발용 합성 입력  ·  실제 손 검증 아님\n" + experience.SmokeResult : "실제 카메라 모드  ·  미리보기만 · 저장·전송 없음";
             resultScore.text = session.Round.TotalScore + " / 50점";
             reticle.gameObject.SetActive(session.HasStarted && !session.Round.IsFinished);
             if (reticle.gameObject.activeSelf)
@@ -173,8 +181,10 @@ namespace HandArchery.Presentation
         }
         void ReticleBar(Vector2 position,Vector2 size)
         {
+            var outline = Rect(reticle,"Aim mark black outline",position,size + new Vector2(4,4),new Vector2(.5f,.5f));
+            var backing = outline.gameObject.AddComponent<Image>(); backing.color = Color.black; backing.raycastTarget = false;
             var rect = Rect(reticle,"Aim mark",position,size,new Vector2(.5f,.5f));
-            rect.gameObject.AddComponent<Image>().color = Gold; rect.GetComponent<Image>().raycastTarget = false;
+            rect.gameObject.AddComponent<Image>().color = AimCyan; rect.GetComponent<Image>().raycastTarget = false;
         }
     }
 }
