@@ -112,3 +112,6 @@ InitTestScene*.unity*
 
 # Auto-generated cache in Assets folder
 /[Aa]ssets/[Ss]ceneDependencyCache*
+# Reproducible pinned dependency archives and temporary extraction, not source.
+/Packages/Local/
+/Builds/
