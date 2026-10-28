@@ -1,0 +1,6 @@
+{
+  "name": "HandArchery.Game",
+  "rootNamespace": "HandArchery",
+  "references": ["HandArchery.Core", "HandArchery.Input", "Unity.InputSystem", "Unity.ugui"],
+  "autoReferenced": true
+}
