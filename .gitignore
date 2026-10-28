@@ -115,3 +115,4 @@ InitTestScene*.unity*
 # Reproducible pinned dependency archives and temporary extraction, not source.
 /Packages/Local/
 /Builds/
+/Validation/
